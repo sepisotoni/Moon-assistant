@@ -125,5 +125,44 @@ class ModerationCog(commands.Cog):
         await interaction.response.send_message(f"✅ Timeout removed for {member.mention}.")
 
 
+    @app_commands.command(name="bulkdelete", description="Delete recent messages from a member in this channel.")
+    @app_commands.describe(
+        member="Whose messages to delete",
+        count="How many messages to delete (max 100)",
+        reason="Reason for deletion",
+    )
+    @app_commands.checks.has_permissions(manage_messages=True)
+    async def bulkdelete(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        count: app_commands.Range[int, 1, 100] = 10,
+        reason: str | None = None,
+    ) -> None:
+        if not isinstance(interaction.channel, discord.TextChannel):
+            await interaction.response.send_message("This command only works in a text channel.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        deleted = await interaction.channel.purge(
+            limit=count * 5,  # scan more messages to find target's
+            check=lambda m: m.author.id == member.id and not m.pinned,
+            bulk=True,
+        )
+        actual = len(deleted)
+
+        await self._log_service.log(
+            level="INFO",
+            source="moderation.bulkdelete",
+            message=f"{interaction.user} bulk-deleted {actual} messages from {member} in #{interaction.channel.name}: {reason}",
+            guild_id=interaction.guild_id,
+        )
+        await interaction.followup.send(
+            f"🗑️ Deleted **{actual}** message(s) from {member.mention}.",
+            ephemeral=True,
+        )
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(ModerationCog(bot))

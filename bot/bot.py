@@ -19,6 +19,7 @@ from bot.knowledge.learning_service import KnowledgeLearningService
 from bot.moderation.intelligence_service import ModerationIntelligenceService
 from bot.repositories.ai_repository import DecisionLogRepository
 from bot.repositories.moderation_intel_repository import InvestigationRepository as InvRepo
+from bot.services.agent_service import AgentService
 from bot.services.assistant_tools_service import AssistantToolsService
 from bot.services.investigation_service import InvestigationService
 from bot.services.logging_service import DatabaseLogService
@@ -104,6 +105,7 @@ class AIModerationBot(commands.Bot):
         )
         self.investigation_service = InvestigationService(orchestrator=self.orchestrator)
         self.moderation_intel_service = ModerationIntelligenceService(orchestrator=self.orchestrator)
+        self.agent_service = AgentService(orchestrator=self.orchestrator)
         self.db_log_service = DatabaseLogService()
 
     async def setup_hook(self) -> None:
