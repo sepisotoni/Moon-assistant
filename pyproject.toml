@@ -1,0 +1,16 @@
+[project]
+name = "discord-ai-bot"
+version = "0.1.0"
+description = "Discord.py AI moderation and support bot with permission-aware search and RAG-grounded AI answers."
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.black]
+line-length = 110
+target-version = ["py312"]
