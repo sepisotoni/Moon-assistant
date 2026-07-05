@@ -21,6 +21,7 @@ from bot.repositories.ai_repository import DecisionLogRepository
 from bot.repositories.moderation_intel_repository import InvestigationRepository as InvRepo
 from bot.services.agent_service import AgentService
 from bot.services.assistant_tools_service import AssistantToolsService
+from bot.services.conversation_service import ConversationService
 from bot.services.investigation_service import InvestigationService
 from bot.services.logging_service import DatabaseLogService
 from bot.services.memory_service import MemoryService
@@ -44,6 +45,7 @@ EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.model_routing_cog",
     "bot.cogs.background_tasks_cog",
     "bot.cogs.error_handler_cog",
+    "bot.cogs.conversation_cog",
 )
 
 
@@ -106,6 +108,7 @@ class AIModerationBot(commands.Bot):
         self.investigation_service = InvestigationService(orchestrator=self.orchestrator)
         self.moderation_intel_service = ModerationIntelligenceService(orchestrator=self.orchestrator)
         self.agent_service = AgentService(orchestrator=self.orchestrator)
+        self.conversation = ConversationService()
         self.db_log_service = DatabaseLogService()
 
     async def setup_hook(self) -> None:
@@ -149,3 +152,17 @@ class AIModerationBot(commands.Bot):
     async def on_ready(self) -> None:
         logger.info("Logged in as %s (id=%s)", self.user, getattr(self.user, "id", "?"))
         self.db_log_service.attach_client(self)
+        # Set bot presence so members can see it's online and what it does.
+        await self.change_presence(
+            status=discord.Status.online,
+            activity=discord.Activity(
+                type=discord.ActivityType.watching,
+                name="the server | /ask or @mention me",
+            ),
+        )
+
+    async def on_message(self, message: discord.Message) -> None:
+        """Single global on_message — dispatches to cog listeners then processes prefix commands
+        exactly once. Keeping process_commands here (not in any cog) prevents double-invocation."""
+        if not message.author.bot:
+            await self.process_commands(message)

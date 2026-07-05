@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     # The DB-backed ai_model_configs table is the real source of truth at runtime; this is only
     # the seed list used the first time the registry is populated.
     openrouter_candidate_models: str = Field(
-        "meta-llama/llama-3.1-8b-instruct:free,google/gemma-2-9b-it:free,mistralai/mistral-7b-instruct:free",
+        "meta-llama/llama-3.3-70b-instruct:free,mistralai/mistral-7b-instruct:free,google/gemma-3-4b-it:free",
         alias="OPENROUTER_CANDIDATE_MODELS",
     )
     gemini_candidate_models: str = Field("gemini-1.5-flash,gemini-1.5-flash-8b", alias="GEMINI_CANDIDATE_MODELS")

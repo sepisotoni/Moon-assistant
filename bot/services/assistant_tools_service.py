@@ -68,6 +68,7 @@ class AssistantToolsService:
         question: str,
         *,
         target_member: discord.Member | None = None,
+        history: list | None = None,
     ) -> AIDecision:
         """!ask – answer a question, optionally about what a specific member said."""
         guild = message.guild
@@ -91,6 +92,9 @@ class AssistantToolsService:
         msgs: list[AIMessage] = [AIMessage(role="system", content=system)]
         if parts:
             msgs.append(AIMessage(role="system", content="\n".join(parts)))
+        # Inject conversation history for natural multi-turn replies
+        if history:
+            msgs.extend(history)
         msgs.append(AIMessage(role="user", content=question))
 
         decision = await self._orchestrator.generate_for_task(

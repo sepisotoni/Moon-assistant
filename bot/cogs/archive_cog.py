@@ -34,9 +34,6 @@ class ArchiveCog(commands.Cog):
         except Exception:
             logger.exception("Failed to archive message %s", message.id)
 
-        # Still allow prefix-style commands (if any are added later) to function.
-        await self.bot.process_commands(message)
-
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
         if after.guild is None or after.author.bot:

@@ -75,7 +75,16 @@ class AssistantCog(commands.Cog, name="Assistant"):
             target_member = ctx.guild.get_member(uid)
 
         async with ctx.typing():
-            decision = await self._tools.handle_ask(ctx.message, question, target_member=target_member)
+            conversation = self.bot.conversation  # type: ignore[attr-defined]
+            history = conversation.history_messages(ctx.channel.id)
+            decision = await self._tools.handle_ask(ctx.message, question, target_member=target_member, history=history)
+            conversation.record(
+                channel_id=ctx.channel.id,
+                user_content=question,
+                assistant_content=decision.text,
+                user_id=ctx.author.id,
+                user_name=ctx.author.display_name,
+            )
 
         await ctx.reply(embed=self._build_embed("!ask", decision), mention_author=False)
 

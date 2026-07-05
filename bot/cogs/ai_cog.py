@@ -88,11 +88,21 @@ class AICog(commands.Cog, name="AI"):
         # --- Normal support / knowledge path ---
         try:
             support_engine = self.bot.support_engine  # type: ignore[attr-defined]
+            conversation = self.bot.conversation  # type: ignore[attr-defined]
+            history = conversation.history_messages(interaction.channel_id or 0)
             decision, intent = await support_engine.answer(
                 guild=interaction.guild,
                 member=interaction.user,
                 channel_id=interaction.channel_id or 0,
                 question=question,
+                history=history,
+            )
+            conversation.record(
+                channel_id=interaction.channel_id or 0,
+                user_content=question,
+                assistant_content=decision.text,
+                user_id=interaction.user.id,
+                user_name=interaction.user.display_name,
             )
         except Exception as exc:
             logger.exception("SupportEngine failed for /ask")

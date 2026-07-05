@@ -46,6 +46,7 @@ class SupportEngine:
         member: discord.Member,
         channel_id: int,
         question: str,
+        history: list | None = None,
     ) -> tuple[AIDecision, Intent]:
         intent_result = await self._intent_service.detect(question)
 
@@ -71,8 +72,17 @@ class SupportEngine:
             guild_id=guild.id, base_prompt=settings.ai_system_prompt
         )
 
+        # Inject live server context so the bot knows basic facts about this guild.
+        server_context = (
+            f"You are the AI assistant for Discord server: **{guild.name}** "
+            f"(id={guild.id}, {guild.member_count} members). "
+            f"Text channels: {', '.join(f'#{c.name}' for c in guild.text_channels[:15])}. "
+            "Use this to answer questions about the server by name."
+        )
+
         messages = [
             AIMessage(role="system", content=base_prompt),
+            AIMessage(role="system", content=server_context),
             AIMessage(
                 role="system",
                 content=(
@@ -81,8 +91,12 @@ class SupportEngine:
                     f"Retrieved evidence:\n{evidence_text}"
                 ),
             ),
-            AIMessage(role="user", content=question),
         ]
+        # Inject conversation history BEFORE the new user message so the AI
+        # has full multi-turn context (resolves pronouns like "him", "that", "it").
+        if history:
+            messages.extend(history)
+        messages.append(AIMessage(role="user", content=question))
 
         decision = await self._orchestrator.generate_for_task(
             "support",
