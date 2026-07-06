@@ -46,6 +46,7 @@ EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.background_tasks_cog",
     "bot.cogs.error_handler_cog",
     "bot.cogs.conversation_cog",
+    "bot.cogs.music_cog",
 )
 
 
