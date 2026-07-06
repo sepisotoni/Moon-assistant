@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 import httpx
 
 from bot.ai.base import AIMessage, AIProvider, AIProviderError, AIResponse
+from bot.ai.openrouter_provider import _MAX_ATTEMPTS, _backoff_delay, _RETRYABLE_STATUS
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiProvider(AIProvider):
@@ -46,18 +51,30 @@ class GeminiProvider(AIProvider):
         if system_prompt:
             payload["systemInstruction"] = {"parts": [{"text": system_prompt}]}
 
-        try:
-            resp = await self._client.post(
-                f"/models/{self._model}:generateContent",
-                params={"key": self._api_key},
-                json=payload,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            text = data["candidates"][0]["content"]["parts"][0]["text"]
-            return AIResponse(text=text, provider=self.name, model=self._model, raw=data)
-        except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
-            raise AIProviderError(f"Gemini request failed: {exc}") from exc
+        last_exc: Exception | None = None
+        for attempt in range(_MAX_ATTEMPTS):
+            try:
+                resp = await self._client.post(
+                    f"/models/{self._model}:generateContent",
+                    params={"key": self._api_key},
+                    json=payload,
+                )
+                if resp.status_code in _RETRYABLE_STATUS and attempt < _MAX_ATTEMPTS - 1:
+                    logger.warning("Gemini %d on attempt %d/%d — retrying", resp.status_code, attempt + 1, _MAX_ATTEMPTS)
+                    await _backoff_delay(attempt)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return AIResponse(text=text, provider=self.name, model=self._model, raw=data)
+            except (httpx.HTTPError, KeyError, IndexError, TypeError) as exc:
+                last_exc = exc
+                if attempt < _MAX_ATTEMPTS - 1:
+                    logger.warning("Gemini attempt %d/%d failed: %s — retrying", attempt + 1, _MAX_ATTEMPTS, exc)
+                    await _backoff_delay(attempt)
+                    continue
+                break
+        raise AIProviderError(f"Gemini request failed after {_MAX_ATTEMPTS} attempts: {last_exc}") from last_exc
 
     async def close(self) -> None:
         await self._client.aclose()
