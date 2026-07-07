@@ -21,7 +21,10 @@ from bot.repositories.ai_repository import DecisionLogRepository
 from bot.repositories.moderation_intel_repository import InvestigationRepository as InvRepo
 from bot.services.agent_service import AgentService
 from bot.services.assistant_tools_service import AssistantToolsService
+from bot.services.code_execution_service import CodeExecutionService
 from bot.services.conversation_service import ConversationService
+from bot.services.identity_service import IdentityService
+from bot.services.scheduler_service import SchedulerService
 from bot.services.investigation_service import InvestigationService
 from bot.services.logging_service import DatabaseLogService
 from bot.services.memory_service import MemoryService
@@ -47,6 +50,7 @@ EXTENSIONS: tuple[str, ...] = (
     "bot.cogs.error_handler_cog",
     "bot.cogs.conversation_cog",
     "bot.cogs.music_cog",
+    "bot.cogs.control_panel_cog",
 )
 
 
@@ -110,6 +114,9 @@ class AIModerationBot(commands.Bot):
         self.moderation_intel_service = ModerationIntelligenceService(orchestrator=self.orchestrator)
         self.agent_service = AgentService(orchestrator=self.orchestrator)
         self.conversation = ConversationService()
+        self.identity_service = IdentityService()
+        self.code_executor = CodeExecutionService(bot=None)  # bot attached after ready
+        self.scheduler = SchedulerService()
         self.db_log_service = DatabaseLogService()
 
     async def setup_hook(self) -> None:
@@ -147,13 +154,18 @@ class AIModerationBot(commands.Bot):
         logger.info("Slash commands synced globally.")
 
     async def close(self) -> None:
+        self.scheduler.stop()
         await self.orchestrator.close()
         await super().close()
 
     async def on_ready(self) -> None:
         logger.info("Logged in as %s (id=%s)", self.user, getattr(self.user, "id", "?"))
         self.db_log_service.attach_client(self)
-        # Set bot presence so members can see it's online and what it does.
+        # Attach bot reference to services that need it after login
+        self.code_executor.attach_bot(self)
+        self.scheduler.attach_bot(self)
+        self.scheduler.start()
+        # Set bot presence
         await self.change_presence(
             status=discord.Status.online,
             activity=discord.Activity(

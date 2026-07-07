@@ -20,11 +20,7 @@ settings = get_settings()
 
 class SupportEngine:
     """Answers support questions by combining knowledge retrieval, permission-aware message
-    retrieval, announcement retrieval, and AI reasoning -- the spec's "support engine".
-
-    This sits above (and reuses) Phase 1's SearchService and KnowledgeRetriever rather than
-    duplicating their permission-aware logic.
-    """
+    retrieval, announcement retrieval, identity facts, and AI reasoning."""
 
     def __init__(
         self,
@@ -47,15 +43,19 @@ class SupportEngine:
         channel_id: int,
         question: str,
         history: list | None = None,
+        identity_facts: dict | None = None,
     ) -> tuple[AIDecision, Intent]:
         intent_result = await self._intent_service.detect(question)
 
         knowledge_hits = await self._knowledge.search(guild.id, question, limit=5)
-        # Permission-aware: a member only ever sees archived-message context from channels
-        # they can view themselves, exactly like /search.
         message_hits = await self._search.search(guild=guild, member=member, query=question, limit=5)
 
         evidence_lines: list[str] = []
+
+        # Inject known server facts from identity service if passed in
+        if identity_facts:
+            evidence_lines.append("[identity facts] " + " | ".join(f"{k}: {v}" for k, v in identity_facts.items()))
+
         for k in knowledge_hits:
             tag = "announcement" if k.channel_name in KNOWLEDGE_CHANNEL_NAMES else "knowledge"
             evidence_lines.append(f"[{tag}:{k.channel_name}] {k.content}")
@@ -69,7 +69,9 @@ class SupportEngine:
         evidence_text = "\n".join(evidence_lines) if evidence_lines else "(no relevant evidence retrieved)"
 
         base_prompt = await self._constitution.build_system_prompt(
-            guild_id=guild.id, base_prompt=settings.ai_system_prompt
+            guild_id=guild.id,
+            base_prompt=settings.ai_system_prompt,
+            identity_prompt=None,  # identity facts are injected via evidence_lines below
         )
 
         # Inject live server context so the bot knows basic facts about this guild.

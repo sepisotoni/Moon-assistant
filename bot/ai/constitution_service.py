@@ -122,16 +122,24 @@ class ConstitutionService:
         else:
             self._cache.pop(guild_id, None)
 
-    async def build_system_prompt(self, *, guild_id: int, base_prompt: str) -> str:
-        if guild_id in self._cache:
-            return self._cache[guild_id]
+    async def build_system_prompt(self, *, guild_id: int, base_prompt: str, identity_prompt: str | None = None) -> str:
+        cache_key = guild_id
+        if cache_key in self._cache and identity_prompt is None:
+            return self._cache[cache_key]
 
         rules = await self._repo.list_active(guild_id)
         by_tier: dict[ConstitutionTier, list[str]] = {}
         for rule in rules:
             by_tier.setdefault(rule.tier, []).append(f"- {rule.title}: {rule.rule_text}")
 
-        sections: list[str] = [base_prompt, "", "AI CONSTITUTION (higher-numbered tiers below are LOWER priority; a higher tier always wins on conflict):"]
+        # Identity personality goes first — it defines who the bot IS
+        foundation = identity_prompt or base_prompt
+
+        sections: list[str] = [
+            foundation,
+            "",
+            "AI CONSTITUTION (higher-numbered tiers are LOWER priority; a higher tier always wins on conflict):",
+        ]
         for tier in sorted(ConstitutionTier, key=lambda t: t.value):
             lines = by_tier.get(tier)
             if not lines:
@@ -140,5 +148,6 @@ class ConstitutionService:
             sections.extend(lines)
 
         prompt = "\n".join(sections)
-        self._cache[guild_id] = prompt
+        if identity_prompt is None:
+            self._cache[cache_key] = prompt
         return prompt

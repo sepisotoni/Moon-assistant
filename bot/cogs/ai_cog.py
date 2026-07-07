@@ -89,13 +89,16 @@ class AICog(commands.Cog, name="AI"):
         try:
             support_engine = self.bot.support_engine  # type: ignore[attr-defined]
             conversation = self.bot.conversation  # type: ignore[attr-defined]
+            identity_svc = self.bot.identity_service  # type: ignore[attr-defined]
             history = conversation.history_messages(interaction.channel_id or 0)
+            identity_facts = identity_svc.get(interaction.guild).known_facts
             decision, intent = await support_engine.answer(
                 guild=interaction.guild,
                 member=interaction.user,
                 channel_id=interaction.channel_id or 0,
                 question=question,
                 history=history,
+                identity_facts=identity_facts,
             )
             conversation.record(
                 channel_id=interaction.channel_id or 0,

@@ -30,7 +30,11 @@ class Settings(BaseSettings):
     gemini_model: str = Field("gemini-1.5-flash", alias="GEMINI_MODEL")
 
     ai_system_prompt: str = Field(
-        "You are a helpful, concise Discord community AI assistant.",
+        "You are Moon-Assistant, an intelligent and friendly AI who is a core part of this Discord community. "
+        "You are not just a bot — you are embedded in this server and know it well. "
+        "You have personality: helpful, slightly witty, and genuinely caring about the server. "
+        "You never give up when asked for information — you search for it. "
+        "When you don't know something, you say so honestly but always offer to help find it.",
         alias="AI_SYSTEM_PROMPT",
     )
 
@@ -65,10 +69,10 @@ class Settings(BaseSettings):
     # The DB-backed ai_model_configs table is the real source of truth at runtime; this is only
     # the seed list used the first time the registry is populated.
     openrouter_candidate_models: str = Field(
-        "meta-llama/llama-3.3-70b-instruct:free,mistralai/mistral-7b-instruct:free,google/gemma-3-4b-it:free",
+        "meta-llama/llama-3.3-70b-instruct:free,meta-llama/llama-3.2-3b-instruct:free,nvidia/nemotron-3-super-120b-a12b:free",
         alias="OPENROUTER_CANDIDATE_MODELS",
     )
-    gemini_candidate_models: str = Field("gemini-1.5-flash,gemini-1.5-flash-8b", alias="GEMINI_CANDIDATE_MODELS")
+    gemini_candidate_models: str = Field("gemini-2.0-flash,gemini-2.0-flash-lite", alias="GEMINI_CANDIDATE_MODELS")
     # Consecutive failures before a model is marked unhealthy and skipped by the router.
     model_unhealthy_after_failures: int = Field(3, alias="MODEL_UNHEALTHY_AFTER_FAILURES")
     # Cooldown before an unhealthy model gets a single retry ("half-open" circuit breaker).

@@ -13,6 +13,7 @@ directly from URLs/YouTube — no files are stored on disk permanently.
 
 import asyncio
 import logging
+import os
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Deque
@@ -23,9 +24,14 @@ from discord.ext import commands
 
 logger = logging.getLogger(__name__)
 
+# Resolve ffmpeg — prefer ~/.local/bin (manual install) over system PATH
+_HOME_FFMPEG = os.path.expanduser("~/.local/bin/ffmpeg")
+FFMPEG_EXE = _HOME_FFMPEG if os.path.isfile(_HOME_FFMPEG) else "ffmpeg"
+
 FFMPEG_OPTIONS = {
+    "executable": FFMPEG_EXE,
     "before_options": "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5",
-    "options": "-vn",  # no video
+    "options": "-vn",
 }
 
 YDL_FORMAT_OPTIONS = {
@@ -36,6 +42,19 @@ YDL_FORMAT_OPTIONS = {
     "default_search": "ytsearch",
     "source_address": "0.0.0.0",
     "extract_flat": False,
+    # Bypass YouTube bot-detection on server IPs
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["web_creator", "tv", "ios"],
+        }
+    },
+    "http_headers": {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    },
 }
 
 
@@ -93,7 +112,11 @@ class MusicCog(commands.Cog, name="Music"):
         return vc
 
     async def _fetch_track(self, query: str, requester: discord.Member) -> Track | None:
-        """Resolve a search query or URL to a playable Track using yt-dlp."""
+        """Resolve a search query or URL to a playable Track using yt-dlp.
+
+        Tries YouTube with multiple player clients to bypass bot detection.
+        Falls back to SoundCloud search if all YouTube attempts fail.
+        """
         try:
             import yt_dlp  # noqa: PLC0415
         except ImportError:
@@ -101,29 +124,69 @@ class MusicCog(commands.Cog, name="Music"):
 
         loop = asyncio.get_event_loop()
 
-        def _extract():
-            with yt_dlp.YoutubeDL(YDL_FORMAT_OPTIONS) as ydl:
-                # If not a URL, treat as a search.
-                if not query.startswith("http"):
-                    info = ydl.extract_info(f"ytsearch:{query}", download=False)
-                    if "entries" in info:
-                        info = info["entries"][0]
-                else:
-                    info = ydl.extract_info(query, download=False)
+        # Try different player clients in order — server IPs often get blocked by
+        # YouTube's bot detection on the default web client.
+        client_attempts = [
+            ["web_creator", "tv", "ios"],
+            ["tv_embedded", "ios"],
+            ["ios"],
+        ]
+
+        def _extract(player_clients: list[str]) -> dict:
+            opts = {**YDL_FORMAT_OPTIONS}
+            opts["extractor_args"] = {"youtube": {"player_client": player_clients}}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                search_query = query if query.startswith("http") else f"ytsearch:{query}"
+                info = ydl.extract_info(search_query, download=False)
+                if info and "entries" in info:
+                    info = info["entries"][0]
                 return info
 
-        try:
-            info = await loop.run_in_executor(None, _extract)
-            return Track(
-                title=info.get("title", "Unknown"),
-                url=info["url"],
-                webpage_url=info.get("webpage_url", query),
-                duration=info.get("duration", 0),
-                requester=requester,
-            )
-        except Exception as exc:
-            logger.warning("yt-dlp failed for query %r: %s", query, exc)
-            return None
+        def _extract_soundcloud(q: str) -> dict:
+            opts = {**YDL_FORMAT_OPTIONS}
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(f"scsearch:{q}", download=False)
+                if info and "entries" in info:
+                    info = info["entries"][0]
+                return info
+
+        # Try YouTube with each client
+        last_error: Exception | None = None
+        for clients in client_attempts:
+            try:
+                info = await loop.run_in_executor(None, _extract, clients)
+                if info:
+                    return Track(
+                        title=info.get("title", "Unknown"),
+                        url=info["url"],
+                        webpage_url=info.get("webpage_url", query),
+                        duration=info.get("duration", 0),
+                        requester=requester,
+                    )
+            except Exception as exc:
+                last_error = exc
+                logger.debug("YouTube client %s failed: %s", clients, exc)
+                continue
+
+        # SoundCloud fallback — works reliably on server IPs
+        if not query.startswith("http"):
+            try:
+                logger.info("YouTube failed, trying SoundCloud for: %s", query)
+                info = await loop.run_in_executor(None, _extract_soundcloud, query)
+                if info:
+                    return Track(
+                        title=info.get("title", "Unknown"),
+                        url=info["url"],
+                        webpage_url=info.get("webpage_url", query),
+                        duration=info.get("duration", 0),
+                        requester=requester,
+                    )
+            except Exception as exc:
+                last_error = exc
+                logger.warning("SoundCloud fallback also failed for %r: %s", query, exc)
+
+        logger.warning("yt-dlp failed for query %r: %s", query, last_error)
+        return None
 
     def _play_next(self, guild: discord.Guild, vc: discord.VoiceClient) -> None:
         """Internal: play the next track in the queue."""
@@ -171,7 +234,11 @@ class MusicCog(commands.Cog, name="Music"):
         track = await self._fetch_track(query, interaction.user)  # type: ignore[arg-type]
         if track is None:
             await interaction.followup.send(
-                "❌ Couldn't find that track. Make sure `yt-dlp` and `ffmpeg` are installed.",
+                "❌ Couldn't find or play that track.\n"
+                "**Common fixes:**\n"
+                "• Make sure `ffmpeg` is installed: `~/.local/bin/ffmpeg` should exist\n"
+                "• YouTube bot detection may be blocking — try a SoundCloud link or different song\n"
+                "• Try a direct URL instead of a search query",
                 ephemeral=True,
             )
             return

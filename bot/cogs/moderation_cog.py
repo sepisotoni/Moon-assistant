@@ -145,23 +145,53 @@ class ModerationCog(commands.Cog):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
-        deleted = await interaction.channel.purge(
-            limit=count * 5,  # scan more messages to find target's
-            check=lambda m: m.author.id == member.id and not m.pinned,
-            bulk=True,
-        )
-        actual = len(deleted)
+        import datetime as dt
+        cutoff = discord.utils.utcnow() - dt.timedelta(days=14)
+        deleted = 0
+        skipped = 0
+
+        try:
+            # Use purge with error_handler to skip already-deleted or too-old messages
+            def check(m: discord.Message) -> bool:
+                return m.author.id == member.id and not m.pinned
+
+            msgs = await interaction.channel.purge(
+                limit=count * 5,
+                check=check,
+                bulk=True,
+                before=None,
+                oldest_first=False,
+                error_handler=lambda msg, exc: None,  # silently skip failures
+            )
+            deleted = len(msgs)
+        except discord.Forbidden:
+            await interaction.followup.send("❌ I don't have permission to delete messages.", ephemeral=True)
+            return
+        except Exception:
+            # Fallback: manual one-by-one deletion with error handling
+            try:
+                fetched = [m async for m in interaction.channel.history(limit=count * 5) if m.author.id == member.id and not m.pinned]
+                for msg in fetched[:count]:
+                    try:
+                        await msg.delete()
+                        deleted += 1
+                    except (discord.NotFound, discord.HTTPException):
+                        skipped += 1
+                        continue
+            except Exception as e:
+                await interaction.followup.send(f"❌ Failed: {e}", ephemeral=True)
+                return
 
         await self._log_service.log(
             level="INFO",
             source="moderation.bulkdelete",
-            message=f"{interaction.user} bulk-deleted {actual} messages from {member} in #{interaction.channel.name}: {reason}",
+            message=f"{interaction.user} bulk-deleted {deleted} messages from {member} in #{interaction.channel.name}: {reason}",
             guild_id=interaction.guild_id,
         )
-        await interaction.followup.send(
-            f"🗑️ Deleted **{actual}** message(s) from {member.mention}.",
-            ephemeral=True,
-        )
+        result = f"🗑️ Deleted **{deleted}** message(s) from {member.mention}."
+        if skipped:
+            result += f" ({skipped} skipped — already deleted or too old)"
+        await interaction.followup.send(result, ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:

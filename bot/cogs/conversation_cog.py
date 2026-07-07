@@ -106,9 +106,11 @@ class ConversationCog(commands.Cog, name="Conversation"):
                 history = self._conv.history_messages(channel.id)
 
                 if guild and isinstance(member, discord.Member):
+                    identity_facts = self.bot.identity_service.get(guild).known_facts  # type: ignore[attr-defined]
                     decision, intent = await self._engine.answer(
                         guild=guild, member=member,
-                        channel_id=channel.id, question=text, history=history,
+                        channel_id=channel.id, question=text,
+                        history=history, identity_facts=identity_facts,
                     )
                     response_text = decision.text
                 else:
